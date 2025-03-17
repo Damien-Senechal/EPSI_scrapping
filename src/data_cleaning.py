@@ -121,24 +121,28 @@ class DataCleaner:
     
     def _clean_price(self, price_text):
         """
-        Nettoyage des valeurs de prix - suppression des symboles d'euro
-        
-        Args:
-            price_text: texte de prix à nettoyer
-            
-        Returns:
-            cleaned_price: prix nettoyé
+        Nettoyage des valeurs de prix - gestion des séparateurs de milliers et décimaux
         """
         try:
-            price = price_text.replace(' ', '').strip()
-            if '€' in price:
-                price = price.replace('€', '').strip()
+            # Supprimer les espaces et le symbole €
+            price = str(price_text).replace(' ', '').replace('€', '').strip()
+            
+            # Traiter au cas où il y a plusieurs points (séparateurs de milliers)
+            if price.count('.') > 1:
+                # Supprimer tous les points (séparateurs de milliers)
+                price = price.replace('.', '')
+            
+            # Remplacer la virgule par un point pour les décimales
             price = price.replace(',', '.')
             
-            if price and price.replace('.', '').isdigit():
-                return price  # Retourne juste la chaîne nettoyée sans formater
+            # Vérifier si c'est un nombre valide
+            if price.replace('.', '', 1).isdigit():  # un seul point autorisé
+                # Convertir en nombre à virgule flottante
+                return float(price)
+            
             return price_text.strip().replace(' €', '')
-        except:
+        except Exception as e:
+            print(f"Erreur lors du nettoyage du prix: {e}")
             return price_text.strip().replace(' €', '')
     
     def _convert_to_numeric(self, value_str):

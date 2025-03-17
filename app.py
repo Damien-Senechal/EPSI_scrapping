@@ -1,4 +1,5 @@
 # app.py
+import plotly.graph_objects as go
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -10,6 +11,7 @@ import joblib
 from src.visualization import Visualization
 from src.ml_analysis import MLAnalysis
 from src.utils import create_interactive_map
+
 
 # Configuration de la page
 st.set_page_config(
@@ -23,44 +25,44 @@ st.set_page_config(
 st.title("Analyse des coûts et qualité de vie dans les villes françaises")
 st.markdown("Cette application visualise et analyse les données sur le coût de la vie, la santé et la criminalité dans différentes villes françaises.")
 
+def convert_to_numeric(df):
+    """
+    Convertit toutes les colonnes qui contiennent des données de prix en valeurs numériques
+    """
+    df_numeric = df.copy()
+    for col in df_numeric.columns:
+        # Essayer de convertir chaque colonne en numérique
+        df_numeric[col] = pd.to_numeric(df_numeric[col], errors='coerce')
+    return df_numeric
+
 # Fonction pour charger les données
 @st.cache_data
 def load_data():
-    """Charge et prépare les données pour l'application"""
+    dfs = {}
+    
+    # Chemins des fichiers
+    cost_file = 'data/load/cost_of_living_final.csv'
+    
     try:
-        # Chargement des données
-        dfs = {}
-        for data_type in ['cost', 'health', 'crime']:
-            try:
-                file_path = f'data/load/{data_type}_final.csv'
-                if os.path.exists(file_path):
-                    dfs[data_type] = pd.read_csv(file_path, index_col='City')
-            except Exception as e:
-                st.warning(f"Erreur lors du chargement des données {data_type}: {str(e)}")
+        # Lire le CSV avec gestion des index
+        cost_df = pd.read_csv(cost_file)
         
-        # Chargement du dataset fusionné s'il existe
-        merged_path = 'data/load/merged_dataset.csv'
-        if os.path.exists(merged_path):
-            merged_df = pd.read_csv(merged_path)
-            dfs['merged'] = merged_df
+        # Si la première colonne n'est pas 'City', la définir comme index
+        if 'City' not in cost_df.columns:
+            cost_df.set_index(cost_df.columns[0], inplace=True)
         
-        # Chargement des modèles s'ils existent
-        models = {}
-        models_dir = 'data/models'
-        if os.path.exists(models_dir):
-            for model_file in os.listdir(models_dir):
-                if model_file.endswith('.pkl'):
-                    try:
-                        model_path = os.path.join(models_dir, model_file)
-                        models[model_file] = joblib.load(model_path)
-                    except Exception as e:
-                        st.warning(f"Erreur lors du chargement du modèle {model_file}: {str(e)}")
+        # Convertir les colonnes numériques
+        cost_df = convert_to_numeric(cost_df)
         
-        return dfs, models
+        dfs['cost'] = cost_df
+        
+        st.write(f"DataFrame de coût chargé avec {len(cost_df)} lignes")
+        st.write("Colonnes :", list(cost_df.columns))
     
     except Exception as e:
-        st.error(f"Erreur lors du chargement des données: {str(e)}")
-        return {}, {}
+        st.error(f"Erreur de chargement du fichier de coût : {e}")
+    
+    return dfs, {}
 
 # Chargement des données
 dfs, models = load_data()
@@ -134,28 +136,42 @@ if page == "Vue d'ensemble":
     
     with col2:
         if 'cost' in dfs and 'Average Monthly Net Salary (After Tax)' in dfs['cost'].columns:
-            avg_salary = dfs['cost']['Average Monthly Net Salary (After Tax)'].mean()
+            # Convertir explicitement la colonne en numérique
+            salary_col = pd.to_numeric(dfs['cost']['Average Monthly Net Salary (After Tax)'], errors='coerce')
+            avg_salary = salary_col.mean()
             st.metric("Salaire moyen (€)", f"{avg_salary:.2f}")
     
     with col3:
         if 'cost' in dfs and 'Apartment (1 bedroom) in City Centre' in dfs['cost'].columns:
-            avg_rent = dfs['cost']['Apartment (1 bedroom) in City Centre'].mean()
+            # Convertir explicitement en numérique
+            rent_col = pd.to_numeric(dfs['cost']['Apartment (1 bedroom) in City Centre'], errors='coerce')
+            avg_rent = rent_col.mean()
             st.metric("Loyer moyen (€)", f"{avg_rent:.2f}")
 
 # Page: Coût de la vie
 elif page == "Coût de la vie":
     st.header("Analyse du coût de la vie")
     
+    # Débogage
+    st.write("Contenu de dfs:", list(dfs.keys()))
+    
     if 'cost' in dfs:
         cost_df = dfs['cost']
         
-        # Sélection de la catégorie
+        # Débogage des colonnes
+        st.write("Colonnes du DataFrame de coût:", list(cost_df.columns))
+        
+        # Définir les catégories dynamiquement
         categories = {
             "Alimentation": [col for col in cost_df.columns if any(x in col for x in ['Meal', 'McMeal', 'Milk', 'Bread', 'Rice', 'Eggs', 'Cheese', 'Chicken', 'Beef', 'Apples', 'Banana', 'Oranges', 'Tomato', 'Potato', 'Onion', 'Lettuce', 'Water', 'Wine', 'Beer'])],
             "Logement": [col for col in cost_df.columns if any(x in col for x in ['Apartment', 'Square Meter', 'Basic (Electricity', 'Internet', 'Mortgage'])],
             "Transport": [col for col in cost_df.columns if any(x in col for x in ['Ticket', 'Monthly Pass', 'Taxi', 'Gasoline', 'Volkswagen', 'Toyota'])],
             "Loisirs": [col for col in cost_df.columns if any(x in col for x in ['Cinema', 'Fitness', 'Tennis', 'Cappuccino', 'Beer', 'Wine'])],
         }
+        
+        # Vérification des catégories
+        for category, items in categories.items():
+            st.write(f"{category} - Items: {items}")
         
         selected_category = st.selectbox("Choisir une catégorie", list(categories.keys()))
         
@@ -170,9 +186,9 @@ elif page == "Coût de la vie":
             # Création du graphique de comparaison
             st.subheader(f"Comparaison des coûts - {selected_category}")
             
-            # Création d'un graphique à barres
+            cost_df_reset = cost_df.reset_index()
             fig = px.bar(
-                cost_df[selected_items].reset_index(),
+                cost_df_reset[['City'] + selected_items],
                 x='City',
                 y=selected_items,
                 barmode='group',
@@ -205,11 +221,16 @@ elif page == "Coût de la vie":
         # Calcul de l'indice global
         # Normalisation de chaque catégorie
         normalized_df = pd.DataFrame(index=cost_df.index)
-        
+
         for category, cols in categories.items():
             valid_cols = [col for col in cols if col in cost_df.columns]
             if valid_cols:
-                category_values = cost_df[valid_cols].mean(axis=1)
+                # Convertir en numérique avant de calculer la moyenne
+                numeric_df = pd.DataFrame()
+                for col in valid_cols:
+                    numeric_df[col] = pd.to_numeric(cost_df[col], errors='coerce')
+                
+                category_values = numeric_df.mean(axis=1)
                 normalized_df[f"{category}_index"] = (category_values - category_values.min()) / (category_values.max() - category_values.min())
         
         # Application des poids et calcul de l'indice global

@@ -53,7 +53,7 @@ class Numbeo:
                 
                 raw_data.append(data)
                 # Attente pour ne pas surcharger le serveur
-                time.sleep(2)
+                time.sleep(.1)
             except Exception as e:
                 print(f"Erreur extraction coût de la vie {city}: {str(e)}")
         
@@ -100,7 +100,7 @@ class Numbeo:
                             data[component] = value
                 
                 raw_data.append(data)
-                time.sleep(2)
+                time.sleep(.1)
                 
             except Exception as e:
                 print(f"Erreur extraction santé {city}: {str(e)}")
@@ -152,7 +152,7 @@ class Numbeo:
                             data[component] = value
                 
                 raw_data.append(data)
-                time.sleep(2)
+                time.sleep(.1)
                 
             except Exception as e:
                 print(f"Erreur extraction criminalité {city}: {str(e)}")

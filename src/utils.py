@@ -162,6 +162,10 @@ def create_interactive_map(df, map_title='Carte des villes', value_column=None, 
     Returns:
         fig: figure plotly de la carte
     """
+    import pandas as pd
+    import plotly.express as px
+    import plotly.graph_objects as go
+    
     # Dictionnaire des coordonnées géographiques des villes françaises
     city_coords = {
         'Paris': (48.8566, 2.3522),
@@ -186,78 +190,242 @@ def create_interactive_map(df, map_title='Carte des villes', value_column=None, 
         'Villeurbanne': (45.7679, 4.8830)
     }
     
-    # Préparation des données
+    # Convert df to a DataFrame if it's not already one
+    if not isinstance(df, pd.DataFrame):
+        print("Avertissement: df n'est pas un DataFrame.")
+        # Create a fallback figure with just the cities
+        fallback_fig = go.Figure()
+        fallback_fig.add_trace(go.Scattermapbox(
+            lat=[coords[0] for coords in city_coords.values()],
+            lon=[coords[1] for coords in city_coords.values()],
+            mode='markers',
+            marker=dict(size=10, color='blue'),
+            text=list(city_coords.keys()),
+            hoverinfo='text'
+        ))
+        fallback_fig.update_layout(
+            title=map_title,
+            mapbox=dict(
+                style="open-street-map",
+                zoom=5,
+                center={"lat": 46.603354, "lon": 1.888334}  # Center of France
+            ),
+            height=600,
+            margin={"r": 0, "t": 50, "l": 0, "b": 0}
+        )
+        return fallback_fig
+    
+    # Make a copy to avoid modifying the original
+    df_copy = df.copy()
+    
+    # If DataFrame is empty, return a fallback map
+    if df.empty:
+        print("Avertissement: DataFrame vide.")
+        fallback_fig = go.Figure()
+        fallback_fig.add_trace(go.Scattermapbox(
+            lat=[coords[0] for coords in city_coords.values()],
+            lon=[coords[1] for coords in city_coords.values()],
+            mode='markers',
+            marker=dict(size=10, color='blue'),
+            text=list(city_coords.keys()),
+            hoverinfo='text'
+        ))
+        fallback_fig.update_layout(
+            title=map_title,
+            mapbox=dict(
+                style="open-street-map",
+                zoom=5,
+                center={"lat": 46.603354, "lon": 1.888334}
+            ),
+            height=600,
+            margin={"r": 0, "t": 50, "l": 0, "b": 0}
+        )
+        return fallback_fig
+    
+    # Préparation des données pour la carte
     map_data = []
     
-    for _, row in df.iterrows():
-        city = row.name if isinstance(row.name, str) else row['City']
-        
-        if city in city_coords:
-            lat, lon = city_coords[city]
-            
-            data_row = {
-                'City': city,
-                'Latitude': lat,
-                'Longitude': lon
-            }
-            
-            # Ajout de la colonne de valeur si spécifiée
-            if value_column and value_column in row:
-                data_row[value_column] = row[value_column]
-            
-            # Ajout de la colonne de taille si spécifiée
-            if size_column and size_column in row:
-                data_row[size_column] = row[size_column]
-            
-            map_data.append(data_row)
+    # Check if the index is named 'City' or contains city names
+    if df.index.name == 'City':
+        city_list = df.index.tolist()
+        for city in city_list:
+            if city in city_coords:
+                lat, lon = city_coords[city]
+                data_point = {
+                    'City': city,
+                    'Latitude': lat,
+                    'Longitude': lon
+                }
+                # Add other columns if they exist
+                if value_column and value_column in df.columns:
+                    data_point[value_column] = df.loc[city, value_column]
+                if size_column and size_column in df.columns:
+                    data_point[size_column] = df.loc[city, size_column]
+                map_data.append(data_point)
     
-    # Création du DataFrame pour la carte
+    # Check if 'City' is in the columns
+    elif 'City' in df.columns:
+        for _, row in df.iterrows():
+            city = row['City']
+            if city in city_coords:
+                lat, lon = city_coords[city]
+                data_point = {
+                    'City': city,
+                    'Latitude': lat,
+                    'Longitude': lon
+                }
+                # Add other columns if they exist
+                if value_column and value_column in df.columns:
+                    data_point[value_column] = row[value_column]
+                if size_column and size_column in df.columns:
+                    data_point[size_column] = row[size_column]
+                map_data.append(data_point)
+    
+    # If index contains city names directly
+    else:
+        # Reset index to get it as a column
+        df_with_index = df.reset_index()
+        
+        # Assume the first column contains city names
+        index_col = df_with_index.columns[0]
+        
+        for _, row in df_with_index.iterrows():
+            # Get the city name from the first column
+            possible_city = str(row[index_col])
+            
+            # Check if this is a known city
+            city_found = False
+            for city in city_coords:
+                if city.lower() in possible_city.lower():
+                    lat, lon = city_coords[city]
+                    data_point = {
+                        'City': city,
+                        'Latitude': lat,
+                        'Longitude': lon
+                    }
+                    # Add other columns if they exist
+                    if value_column and value_column in df.columns:
+                        data_point[value_column] = row[value_column] if value_column in row else None
+                    if size_column and size_column in df.columns:
+                        data_point[size_column] = row[size_column] if size_column in row else None
+                    map_data.append(data_point)
+                    city_found = True
+                    break
+            
+            # If it's a numeric index, just use direct mapping
+            if not city_found and index_col == 'index' and isinstance(row[index_col], int):
+                idx = row[index_col]
+                if idx < len(city_coords):
+                    city = list(city_coords.keys())[idx]
+                    lat, lon = city_coords[city]
+                    data_point = {
+                        'City': city,
+                        'Latitude': lat,
+                        'Longitude': lon
+                    }
+                    # Add other columns if they exist
+                    if value_column and value_column in df.columns:
+                        data_point[value_column] = row[value_column] if value_column in row else None
+                    if size_column and size_column in df.columns:
+                        data_point[size_column] = row[size_column] if size_column in row else None
+                    map_data.append(data_point)
+    
+    # If we couldn't find any valid cities, return a fallback map
+    if not map_data:
+        print("Avertissement: Aucune donnée valide pour la carte.")
+        fallback_fig = go.Figure()
+        fallback_fig.add_trace(go.Scattermapbox(
+            lat=[coords[0] for coords in city_coords.values()],
+            lon=[coords[1] for coords in city_coords.values()],
+            mode='markers',
+            marker=dict(size=10, color='blue'),
+            text=list(city_coords.keys()),
+            hoverinfo='text'
+        ))
+        fallback_fig.update_layout(
+            title=map_title,
+            mapbox=dict(
+                style="open-street-map",
+                zoom=5,
+                center={"lat": 46.603354, "lon": 1.888334}
+            ),
+            height=600,
+            margin={"r": 0, "t": 50, "l": 0, "b": 0}
+        )
+        return fallback_fig
+    
+    # Convert list of dictionaries to DataFrame
     map_df = pd.DataFrame(map_data)
     
-    # Création de la carte
-    if value_column and size_column:
-        fig = px.scatter_mapbox(
-            map_df,
-            lat='Latitude',
-            lon='Longitude',
-            hover_name='City',
-            color=value_column,
-            size=size_column,
-            zoom=5,
-            center={"lat": 46.603354, "lon": 1.888334},  # Centre de la France
-            mapbox_style="open-street-map",
-            title=map_title
+    # Create the map
+    try:
+        if value_column and value_column in map_df.columns and size_column and size_column in map_df.columns:
+            fig = px.scatter_mapbox(
+                map_df,
+                lat='Latitude',
+                lon='Longitude',
+                color=value_column,
+                size=size_column,
+                hover_name='City',
+                zoom=5,
+                center={"lat": 46.603354, "lon": 1.888334},
+                mapbox_style="open-street-map",
+                title=map_title
+            )
+        elif value_column and value_column in map_df.columns:
+            fig = px.scatter_mapbox(
+                map_df,
+                lat='Latitude',
+                lon='Longitude',
+                color=value_column,
+                hover_name='City',
+                zoom=5,
+                center={"lat": 46.603354, "lon": 1.888334},
+                mapbox_style="open-street-map",
+                title=map_title
+            )
+        else:
+            fig = px.scatter_mapbox(
+                map_df,
+                lat='Latitude',
+                lon='Longitude',
+                hover_name='City',
+                zoom=5,
+                center={"lat": 46.603354, "lon": 1.888334},
+                mapbox_style="open-street-map",
+                title=map_title
+            )
+        
+        fig.update_layout(
+            margin={"r": 0, "t": 50, "l": 0, "b": 0},
+            height=600
         )
-    elif value_column:
-        fig = px.scatter_mapbox(
-            map_df,
-            lat='Latitude',
-            lon='Longitude',
-            hover_name='City',
-            color=value_column,
-            zoom=5,
-            center={"lat": 46.603354, "lon": 1.888334},
-            mapbox_style="open-street-map",
-            title=map_title
-        )
-    else:
-        fig = px.scatter_mapbox(
-            map_df,
-            lat='Latitude',
-            lon='Longitude',
-            hover_name='City',
-            zoom=5,
-            center={"lat": 46.603354, "lon": 1.888334},
-            mapbox_style="open-street-map",
-            title=map_title
-        )
+        
+        return fig
     
-    fig.update_layout(
-        margin={"r": 0, "t": 50, "l": 0, "b": 0},
-        height=600
-    )
-    
-    return fig
+    except Exception as e:
+        print(f"Erreur lors de la création de la carte: {e}")
+        # Create a fallback figure if there's an error
+        fallback_fig = go.Figure()
+        fallback_fig.add_trace(go.Scattermapbox(
+            lat=[row['Latitude'] for row in map_data],
+            lon=[row['Longitude'] for row in map_data],
+            mode='markers',
+            marker=dict(size=10, color='blue'),
+            text=[row['City'] for row in map_data],
+            hoverinfo='text'
+        ))
+        fallback_fig.update_layout(
+            title=map_title,
+            mapbox=dict(
+                style="open-street-map",
+                zoom=5,
+                center={"lat": 46.603354, "lon": 1.888334}
+            ),
+            height=600,
+            margin={"r": 0, "t": 50, "l": 0, "b": 0}
+        )
+        return fallback_fig
 
 def compare_dataframes(df1, df2, index_col='City'):
     """

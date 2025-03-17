@@ -25,6 +25,98 @@ st.set_page_config(
 st.title("Analyse des coûts et qualité de vie dans les villes françaises")
 st.markdown("Cette application visualise et analyse les données sur le coût de la vie, la santé et la criminalité dans différentes villes françaises.")
 
+def load_and_fix_csv(file_path):
+    """
+    Load a CSV file and fix common issues with formatting
+    
+    Args:
+        file_path: Path to the CSV file
+        
+    Returns:
+        df: Properly formatted DataFrame
+    """
+    try:
+        # Try to read the CSV file
+        df = pd.read_csv(file_path)
+        
+        # Check if the first column is unnamed (index)
+        if df.columns[0].startswith('Unnamed:'):
+            # Rename the first column to 'City'
+            df.rename(columns={df.columns[0]: 'City'}, inplace=True)
+        
+        # If City is a column, set it as the index
+        if 'City' in df.columns:
+            df.set_index('City', inplace=True)
+        
+        # Convert string currency values to numeric
+        for col in df.columns:
+            # Check if the column contains currency values with € symbol or comma as decimal separator
+            if df[col].dtype == 'object':
+                try:
+                    # Remove € symbol, dots as thousands separators, and replace commas with dots
+                    df[col] = df[col].astype(str).str.replace('€', '').str.replace('.', '').str.replace(',', '.').str.strip()
+                    # Convert to numeric
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+                except:
+                    # Keep as is if conversion fails
+                    pass
+        
+        return df
+    
+    except Exception as e:
+        print(f"Error loading CSV file {file_path}: {e}")
+        return pd.DataFrame()  # Return empty DataFrame if loading fails
+
+@st.cache_data
+def load_all_data():
+    """
+    Load all data files and return them as a dictionary of DataFrames
+    """
+    dfs = {}
+    
+    # Define file paths
+    cost_file = 'data/load/cost_of_living_final.csv'
+    health_file = 'data/load/health_final.csv'
+    crime_file = 'data/load/crime_final.csv'
+    merged_file = 'data/load/merged_dataset.csv'
+    
+    # Load files
+    cost_df = load_and_fix_csv(cost_file)
+    if not cost_df.empty:
+        dfs['cost'] = cost_df
+        st.write(f"DataFrame de coût chargé avec {len(cost_df)} lignes")
+    
+    health_df = load_and_fix_csv(health_file)
+    if not health_df.empty:
+        dfs['health'] = health_df
+        st.write(f"DataFrame de santé chargé avec {len(health_df)} lignes")
+    
+    crime_df = load_and_fix_csv(crime_file)
+    if not crime_df.empty:
+        dfs['crime'] = crime_df
+        st.write(f"DataFrame de criminalité chargé avec {len(crime_df)} lignes")
+    
+    merged_df = load_and_fix_csv(merged_file)
+    if not merged_df.empty:
+        dfs['merged'] = merged_df
+    
+    # Load models
+    models = {}
+    model_path = 'data/models'
+    if os.path.exists(model_path):
+        for model_file in os.listdir(model_path):
+            if model_file.endswith('.pkl'):
+                try:
+                    model_name = os.path.splitext(model_file)[0]
+                    model = joblib.load(os.path.join(model_path, model_file))
+                    models[model_name] = model
+                except Exception as e:
+                    st.warning(f"Impossible de charger le modèle {model_file}: {e}")
+    
+    return dfs, models
+
+
+
 def convert_to_numeric(df):
     """
     Convertit toutes les colonnes qui contiennent des données de prix en valeurs numériques
@@ -35,34 +127,84 @@ def convert_to_numeric(df):
         df_numeric[col] = pd.to_numeric(df_numeric[col], errors='coerce')
     return df_numeric
 
+def convert_currency_to_numeric(value):
+    """Convert currency strings like "3,082.76 €" to numeric values (3082.76)"""
+    if pd.isna(value) or not isinstance(value, str):
+        return value
+    
+    try:
+        # Remove € symbol
+        value = value.replace('€', '')
+        
+        # Handle European number format (replace comma with dot for decimal separator)
+        if ',' in value and '.' in value:
+            # If both comma and dot are present, assume comma is thousands separator
+            value = value.replace(',', '')
+        elif ',' in value:
+            # Otherwise assume comma is decimal separator
+            value = value.replace(',', '.')
+        
+        # Remove any remaining non-numeric chars except decimal point
+        value = ''.join(c for c in value if c.isdigit() or c == '.')
+        
+        return float(value)
+    except:
+        return pd.NA
+
 # Fonction pour charger les données
 @st.cache_data
 def load_data():
+    """Load data from scraped CSV files only."""
     dfs = {}
     
-    # Chemins des fichiers
+    # File paths
     cost_file = 'data/load/cost_of_living_final.csv'
+    health_file = 'data/load/health_final.csv'
+    crime_file = 'data/load/crime_final.csv'
     
     try:
-        # Lire le CSV avec gestion des index
-        cost_df = pd.read_csv(cost_file)
+        # Load cost of living data if it exists
+        if os.path.exists(cost_file):
+            # Read CSV
+            cost_df = pd.read_csv(cost_file)
+            
+            # Check for unnamed index column and rename it to City
+            if 'Unnamed: 0' in cost_df.columns:
+                cost_df.rename(columns={'Unnamed: 0': 'City'}, inplace=True)
+            
+            # Set City as index if it exists as a column
+            if 'City' in cost_df.columns:
+                cost_df.set_index('City', inplace=True)
+            
+            # Clean numeric values - very important for currency values
+            for col in cost_df.columns:
+                if cost_df[col].dtype == 'object':
+                    try:
+                        # Remove € symbol, replace comma with dot, and strip whitespace
+                        cost_df[col] = cost_df[col].astype(str)\
+                                      .str.replace('€', '')\
+                                      .str.replace(' ', '')\
+                                      .str.replace(',', '.')\
+                                      .str.strip()
+                        # Convert to numeric
+                        cost_df[col] = pd.to_numeric(cost_df[col], errors='coerce')
+                    except:
+                        pass
+            
+            dfs['cost'] = cost_df
+            st.write(f"DataFrame de coût chargé avec {len(cost_df)} lignes")
+        else:
+            st.warning(f"Fichier de coût de la vie non trouvé: {cost_file}")
         
-        # Si la première colonne n'est pas 'City', la définir comme index
-        if 'City' not in cost_df.columns:
-            cost_df.set_index(cost_df.columns[0], inplace=True)
-        
-        # Convertir les colonnes numériques
-        cost_df = convert_to_numeric(cost_df)
-        
-        dfs['cost'] = cost_df
-        
-        st.write(f"DataFrame de coût chargé avec {len(cost_df)} lignes")
-        st.write("Colonnes :", list(cost_df.columns))
+        # Similar code for health_df and crime_df...
     
     except Exception as e:
-        st.error(f"Erreur de chargement du fichier de coût : {e}")
+        st.error(f"Erreur lors du chargement des données: {e}")
     
-    return dfs, {}
+    # No models to load for now
+    models = {}
+    
+    return dfs, models
 
 # Chargement des données
 dfs, models = load_data()
@@ -136,10 +278,15 @@ if page == "Vue d'ensemble":
     
     with col2:
         if 'cost' in dfs and 'Average Monthly Net Salary (After Tax)' in dfs['cost'].columns:
-            # Convertir explicitement la colonne en numérique
-            salary_col = pd.to_numeric(dfs['cost']['Average Monthly Net Salary (After Tax)'], errors='coerce')
-            avg_salary = salary_col.mean()
-            st.metric("Salaire moyen (€)", f"{avg_salary:.2f}")
+            # Use our special converter for salary values
+            salary_values = dfs['cost']['Average Monthly Net Salary (After Tax)'].apply(convert_currency_to_numeric)
+            valid_salaries = salary_values.dropna()
+            
+            if not valid_salaries.empty:
+                avg_salary = valid_salaries.mean()
+                st.metric("Salaire moyen (€)", f"{avg_salary:.2f}")
+            else:
+                st.warning("Impossible de calculer le salaire moyen")
     
     with col3:
         if 'cost' in dfs and 'Apartment (1 bedroom) in City Centre' in dfs['cost'].columns:
@@ -186,14 +333,18 @@ elif page == "Coût de la vie":
             # Création du graphique de comparaison
             st.subheader(f"Comparaison des coûts - {selected_category}")
             
+            # Reset the index to get City as a column
             cost_df_reset = cost_df.reset_index()
+            city_col = cost_df_reset.columns[0]  # This will be 'City' or whatever the index was named
+            
+            # Create the chart with the actual column names
             fig = px.bar(
-                cost_df_reset[['City'] + selected_items],
-                x='City',
+                cost_df_reset,
+                x=city_col,
                 y=selected_items,
                 barmode='group',
                 title=f"Comparaison des coûts par ville - {selected_category}",
-                labels={'value': 'Coût (€)', 'variable': 'Élément'}
+                labels={'value': 'Coût (€)', 'variable': 'Élément', city_col: 'Ville'}
             )
             
             st.plotly_chart(fig, use_container_width=True)
@@ -245,74 +396,101 @@ elif page == "Coût de la vie":
             # Affichage de l'indice global
             fig = px.bar(
                 normalized_df.sort_values('global_index').reset_index(),
-                x='City',
+                x='index',  # Changed from 'City' to 'index'
                 y='global_index',
                 title="Indice global du coût de la vie",
-                labels={'global_index': 'Indice global', 'City': 'Ville'},
+                labels={'global_index': 'Indice global', 'index': 'Ville'},  # Updated label
                 color='global_index',
                 color_continuous_scale='Viridis'
             )
-            
+                        
             st.plotly_chart(fig, use_container_width=True)
 
 # Page: Santé
-elif page == "Santé":
-    st.header("Analyse des indicateurs de santé")
-    
-    if 'health' in dfs:
-        health_df = dfs['health']
+    elif page == "Santé":
+        st.header("Analyse des indicateurs de santé")
         
-        # Heatmap des indicateurs de santé
-        st.subheader("Comparaison des indicateurs de santé par ville")
-        
-        # Sélection des colonnes numériques uniquement
-        numeric_cols = health_df.select_dtypes(include=[np.number]).columns.tolist()
-        
-        # Sélection des indicateurs à afficher
-        selected_indicators = st.multiselect(
-            "Choisir les indicateurs à comparer",
-            numeric_cols,
-            default=[col for col in numeric_cols if '_value' in col][:5]
-        )
-        
-        if selected_indicators:
-            # Création du graphique de comparaison
-            fig = px.bar(
-                health_df[selected_indicators].reset_index(),
-                x='City',
-                y=selected_indicators,
-                barmode='group',
-                title="Comparaison des indicateurs de santé par ville",
-                labels={'value': 'Score', 'variable': 'Indicateur'}
-            )
+        if 'health' in dfs:
+            health_df = dfs['health']
             
-            st.plotly_chart(fig, use_container_width=True)
-        
-        # Graphique radar pour une ville spécifique
-        st.subheader("Profil de santé par ville")
-        
-        # Sélection de la ville
-        selected_city = st.selectbox("Choisir une ville", health_df.index.tolist())
-        
-        if selected_city:
-            # Sélection des métriques pour le radar
-            radar_metrics = [col for col in numeric_cols if '_value' in col]
+            # Debug info
+            st.write(f"Nombre de lignes dans le DataFrame de santé: {len(health_df)}")
             
-            if radar_metrics:
-                # Préparation des données pour le radar
-                radar_values = health_df.loc[selected_city, radar_metrics].values.flatten().tolist()
-                radar_labels = [col.replace('_value', '') for col in radar_metrics]
+            # Ensure all _value columns are numeric
+            value_cols = [col for col in health_df.columns if '_value' in col]
+            
+            if not value_cols:
+                st.warning("Aucune colonne avec suffixe '_value' trouvée.")
+                # Try to use any numeric columns as fallback
+                numeric_cols = health_df.select_dtypes(include=['float64', 'int64']).columns.tolist()
+                if numeric_cols:
+                    value_cols = numeric_cols
+                else:
+                    st.error("Aucune colonne numérique trouvée.")
+                    st.dataframe(health_df.head())
+            
+            if value_cols:
+                # Ensure numeric type
+                for col in value_cols:
+                    health_df[col] = pd.to_numeric(health_df[col], errors='coerce')
                 
-                # Création du graphique radar
-                fig = px.line_polar(
-                    r=radar_values,
-                    theta=radar_labels,
-                    line_close=True,
-                    range_r=[0, 100],
-                    title=f"Profil de santé de {selected_city}"
+                # Select indicators to display
+                st.subheader("Comparaison des indicateurs de santé par ville")
+                
+                selected_indicators = st.multiselect(
+                    "Choisir les indicateurs à comparer",
+                    value_cols,
+                    default=value_cols[:5] if len(value_cols) >= 5 else value_cols
                 )
                 
-                st.plotly_chart(fig, use_container_width=True)
+                if selected_indicators:
+                    # Create bar chart
+                    health_reset = health_df.reset_index()
+                    city_col = health_reset.columns[0]
+                    
+                    fig = px.bar(
+                        health_reset,
+                        x=city_col,
+                        y=selected_indicators,
+                        barmode='group',
+                        title="Comparaison des indicateurs de santé par ville",
+                        labels={'value': 'Score', 'variable': 'Indicateur', city_col: 'Ville'}
+                    )
+                    
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Graphique radar pour une ville spécifique
+                    st.subheader("Profil de santé par ville")
+                    
+                    # Sélection de la ville
+                    selected_city = st.selectbox("Choisir une ville", health_df.index.tolist())
+                    
+                    if selected_city:
+                        # Sélection des métriques pour le radar (using _value columns if available)
+                        radar_metrics = [col for col in numeric_cols if '_value' in col]
+                        
+                        if not radar_metrics:  # If no _value columns, use all numeric columns
+                            radar_metrics = numeric_cols
+                        
+                        if radar_metrics:
+                            # Préparation des données pour le radar
+                            radar_values = health_df.loc[selected_city, radar_metrics].values.flatten().tolist()
+                            radar_labels = [col.replace('_value', '') if '_value' in col else col for col in radar_metrics]
+                            
+                            # Création du graphique radar
+                            fig = px.line_polar(
+                                r=radar_values,
+                                theta=radar_labels,
+                                line_close=True,
+                                range_r=[0, 100],
+                                title=f"Profil de santé de {selected_city}"
+                            )
+                            
+                            st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.warning("Aucune colonne numérique trouvée dans les données de santé.")
+            else:
+                st.warning("Les données de santé ne sont pas disponibles. Veuillez exécuter le script principal pour générer ces données.")
 
 # Page: Prédictions
 elif page == "Prédictions":

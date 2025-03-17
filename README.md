@@ -51,8 +51,8 @@ project/
 ### Méthode 1: Installation standard
 ```bash
 # Cloner le dépôt
-git clone https://github.com/votre-nom/analyse-cout-vie.git
-cd analyse-cout-vie
+git clone https://github.com/votre-nom/EPSI_scrapping.git
+cd EPSI_scrapping
 
 # Créer un environnement virtuel
 python -m venv venv
@@ -70,14 +70,14 @@ pip install -r requirements.txt
 ### Méthode 2: Utilisation de Docker
 ```bash
 # Cloner le dépôt
-git clone https://github.com/votre-nom/analyse-cout-vie.git
-cd analyse-cout-vie
+git clone https://github.com/votre-nom/EPSI_scrapping.git
+cd EPSI_scrapping
 
 # Construire l'image Docker
-docker build -t analyse-cout-vie .
+docker build -t EPSI_scrapping .
 
 # Exécuter le conteneur
-docker run -it analyse-cout-vie
+docker run -it EPSI_scrapping
 ```
 
 ### Méthode 3: Utilisation de Dev Containers

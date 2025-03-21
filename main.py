@@ -11,7 +11,7 @@ from src.data_storage import DataStorage
 from src.ml_analysis import MLAnalysis
 from src.visualization import Visualization
 
-def main(use_example_data=True):
+def main(use_example_data=False):
     """
     Fonction principale qui orchestre le pipeline de données complet:
     Extraction -> Nettoyage -> Stockage -> Analyse -> Visualisation
@@ -350,4 +350,4 @@ def main(use_example_data=True):
 if __name__ == "__main__":
     # Utiliser les données d'exemple par défaut pour éviter les problèmes de scraping
     # Mettre à False pour tenter le scraping réel
-    main(use_example_data=True)
+    main(use_example_data=False)
